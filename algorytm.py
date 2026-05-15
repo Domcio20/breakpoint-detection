@@ -1,13 +1,11 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
-df = pd.read_csv("data.txt", sep="\t", header=None)
+df = pd.read_csv("orygn_pomiar_0008_normalized.txt", sep="\t", header=None)
 
 x = df[0]
 y = df[1]
-
 
 def least_squares(start, stop):
 
@@ -38,7 +36,9 @@ def build_slopes(dictionary, step=10, max_window=None):
     if max_window is None:
         max_window = len(x) // 2
 
-    for w in range(50, max_window, step):
+    start_range = int(len(x)/10)
+
+    for w in range(start_range, max_window, step):
 
         start = len(x) - w
         end = len(x)
@@ -48,7 +48,7 @@ def build_slopes(dictionary, step=10, max_window=None):
         dictionary[w] = a
 
 
-def breakpoint_detection(slopes, windows):
+def breakpoint_detection(slopes, windows, step=10):
 
     da = np.gradient(slopes)
     d2a = np.gradient(da)
@@ -67,7 +67,7 @@ def breakpoint_detection(slopes, windows):
 
     jump_window = windows[jump_idx]
 
-    break_idx = len(x) - jump_window + 10
+    break_idx = len(x) - jump_window + step
 
     print("BREAK WINDOW:", jump_window)
 
@@ -161,13 +161,14 @@ def plot_results(x_cross, x_meas, y_meas, a1, b1, a2, b2):
 def main():
 
     slopes_dict = {}
+    step = int(len(x)/50)
 
-    build_slopes(slopes_dict)
+    build_slopes(slopes_dict, step)
 
     windows = np.array(sorted(slopes_dict.keys()))
     slopes = np.array([slopes_dict[w] for w in windows])
 
-    break_idx = breakpoint_detection(slopes, windows)
+    break_idx = breakpoint_detection(slopes, windows, step)
 
     a1, b1 = pre_regression(break_idx)
     a2, b2 = post_regression(break_idx)
