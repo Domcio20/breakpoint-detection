@@ -8,4 +8,4 @@ Algorithm for detecting structural breakpoints in signal data using rolling regr
 
 ## Algorithm result
 
-![Result](result.png)
+![Result](result.jpg)
