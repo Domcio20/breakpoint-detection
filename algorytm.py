@@ -2,10 +2,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-df = pd.read_csv("orygn_pomiar_0008_normalized.txt", sep="\t", header=None)
+filename = "orygn_pomiar_1078_normalized.txt"
+
+df = pd.read_csv(filename, sep="\t", header=None)
 
 x = df[0]
 y = df[1]
+z = df[4]
 
 def least_squares(start, stop):
 
@@ -13,15 +16,17 @@ def least_squares(start, stop):
     y_data = y[start:stop]
 
     n = len(x_data)
+
     if n < 2:
         return np.nan, np.nan
 
     sx = sum(x_data)
     sy = sum(y_data)
-    sx2 = sum(a*a for a in x_data)
-    sxy = sum(a*b for a, b in zip(x_data, y_data))
+    sx2 = sum(a * a for a in x_data)
+    sxy = sum(a * b for a, b in zip(x_data, y_data))
 
     denom = (n * sx2 - sx * sx)
+
     if denom == 0:
         return np.nan, np.nan
 
@@ -30,13 +35,12 @@ def least_squares(start, stop):
 
     return a, b
 
-
 def build_slopes(dictionary, step=10, max_window=None):
 
     if max_window is None:
         max_window = len(x) // 2
 
-    start_range = int(len(x)/10)
+    start_range = int(len(x) / 10)
 
     for w in range(start_range, max_window, step):
 
@@ -46,7 +50,6 @@ def build_slopes(dictionary, step=10, max_window=None):
         a, _ = least_squares(start, end)
 
         dictionary[w] = a
-
 
 def breakpoint_detection(slopes, windows, step=10):
 
@@ -59,9 +62,12 @@ def breakpoint_detection(slopes, windows, step=10):
 
     candidates = np.where(np.abs(d2a_n) > threshold)[0]
 
+    fallback = False
+
     if len(candidates) == 0:
         print("No clear breakpoint — fallback")
         jump_idx = len(windows) // 2
+        fallback = True
     else:
         jump_idx = candidates[0]
 
@@ -71,8 +77,7 @@ def breakpoint_detection(slopes, windows, step=10):
 
     print("BREAK WINDOW:", jump_window)
 
-    return break_idx
-
+    return break_idx, fallback
 
 def pre_regression(break_idx):
 
@@ -82,10 +87,7 @@ def pre_regression(break_idx):
     end1 = break_idx
     start1 = max(0, end1 - window_before)
 
-    a1, b1 = least_squares(start1, end1)
-
-    return a1, b1
-
+    return least_squares(start1, end1)
 
 def post_regression(break_idx):
 
@@ -95,80 +97,109 @@ def post_regression(break_idx):
     start2 = break_idx
     end2 = min(len(x), start2 + window_after)
 
-    a2, b2 = least_squares(start2, end2)
-
-    print("POST WINDOW:", window_after)
-
-    return a2, b2
-
+    return least_squares(start2, end2)
 
 def lines_intersection(a1, b1, a2, b2):
 
-    if not np.isnan(a1) and not np.isnan(a2) and abs(a1 - a2) > 1e-12:
-        x_cross = (b2 - b1) / (a1 - a2)
-    else:
-        x_cross = None
+    if (
+        not np.isnan(a1)
+        and not np.isnan(a2)
+        and abs(a1 - a2) > 1e-12
+    ):
+        return (b2 - b1) / (a1 - a2)
 
-    print("INTERSECTION:", x_cross)
-
-    return x_cross
-
+    return None
 
 def closest_point(x_cross):
 
-    if x_cross is not None:
+    if x_cross is None:
+        return None, None
 
-        idx = np.argmin(np.abs(x - x_cross))
+    idx = np.argmin(np.abs(x - x_cross))
 
-        x_meas = x.iloc[idx]
-        y_meas = y.iloc[idx]
+    return x.iloc[idx], y.iloc[idx]
 
-        print("CLOSEST POINT:", x_meas, y_meas)
+def log_failed_case(filename, x_cross, handmade_x, fallback):
 
-        return x_meas, y_meas
+    should_log = False
 
-    return None, None
+    if fallback:
+        should_log = True
 
+    if x_cross is None or handmade_x is None:
+        should_log = True
 
-def plot_results(x_cross, x_meas, y_meas, a1, b1, a2, b2):
+    elif abs(x_cross - handmade_x) > 0.5:
+        should_log = True
+
+    if not should_log:
+        return
+
+    log_file = "failed_cases.txt"
+
+    already_logged = False
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if filename in line:
+                    already_logged = True
+                    break
+    except FileNotFoundError:
+        pass
+
+    if already_logged:
+        print("CASE ALREADY LOGGED")
+        return
+
+    diff = None if x_cross is None or handmade_x is None else abs(x_cross - handmade_x)
+
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write(
+            f"{filename} | "
+            f"alg={x_cross} | "
+            f"handmade={handmade_x} | "
+            f"diff={diff} | "
+            f"fallback={fallback}\n"
+        )
+
+    print("CASE LOGGED")
+
+def plot_results(x_cross, x_meas, y_meas, handmade_x, handmade_y, a1, b1, a2, b2):
 
     plt.figure(figsize=(10, 6))
+
     plt.scatter(x, y, s=5, alpha=0.4)
 
     x_line = np.linspace(x.min(), x.max(), 300)
 
-    plt.plot(x_line, a1 * x_line + b1, color="blue", label="Before")
-    plt.plot(x_line, a2 * x_line + b2, color="orange", label="After")
+    plt.plot(x_line, a1 * x_line + b1, label="Before")
+    plt.plot(x_line, a2 * x_line + b2, label="After")
 
-    if x_cross is not None:
+    if handmade_x is not None:
+        plt.scatter(handmade_x, handmade_y, color="purple", s=120, label="Handmade")
 
-        idx = np.argmin(np.abs(x - x_cross))
-
-        plt.scatter(x.iloc[idx], y.iloc[idx],
-                    color="red", s=120, label="Intersection")
-
-        plt.scatter(x_meas, y_meas,
-                    color="green", s=120, label="Closest")
+    if x_meas is not None:
+        plt.scatter(x_meas, y_meas, color="green", s=120, label="Algorithm")
 
     diff = y.max() - y.min()
     plt.ylim(y.min() - 0.1 * diff, y.max() + 0.1 * diff)
 
     plt.legend()
-    plt.grid(True)
+    plt.grid()
     plt.show()
-
 
 def main():
 
     slopes_dict = {}
-    step = int(len(x)/50)
+    step = int(len(x) / 50)
 
     build_slopes(slopes_dict, step)
 
     windows = np.array(sorted(slopes_dict.keys()))
     slopes = np.array([slopes_dict[w] for w in windows])
 
-    break_idx = breakpoint_detection(slopes, windows, step)
+    break_idx, fallback = breakpoint_detection(slopes, windows, step)
 
     a1, b1 = pre_regression(break_idx)
     a2, b2 = post_regression(break_idx)
@@ -177,7 +208,26 @@ def main():
 
     x_meas, y_meas = closest_point(x_cross)
 
-    plot_results(x_cross, x_meas, y_meas, a1, b1, a2, b2)
+    handmade_x = z.iloc[0]
+    handmade_y = y.iloc[np.argmin(np.abs(x - handmade_x))]
 
+    log_failed_case(
+        filename,
+        x_cross,
+        handmade_x,
+        fallback
+    )
+
+    plot_results(
+        x_cross,
+        x_meas,
+        y_meas,
+        handmade_x,
+        handmade_y,
+        a1,
+        b1,
+        a2,
+        b2
+    )
 
 main()
