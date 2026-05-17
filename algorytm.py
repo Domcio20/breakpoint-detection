@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-filename = "orygn_pomiar_0154_normalized.txt"
+filename = "orygn_pomiar_0418_normalized.txt"
 
 df = pd.read_csv(filename, sep="\t", header=None)
 
@@ -93,12 +93,13 @@ def closest_point(x_cross):
     return x.iloc[idx], y.iloc[idx]
 
 def log_failed_case(filename, x_cross, handmade_x, fallback):
+    x_meas, _ = closest_point(x_cross)
     should_log = False
     if fallback:
         should_log = True
     if x_cross is None or handmade_x is None:
         should_log = True
-    elif abs(x_cross - handmade_x) > 0.5:
+    elif abs(x_meas - handmade_x) > 0.5:
         should_log = True
     if not should_log:
         return
@@ -117,10 +118,11 @@ def log_failed_case(filename, x_cross, handmade_x, fallback):
     if already_logged:
         print("CASE ALREADY LOGGED")
         return
-    diff = None if x_cross is None or handmade_x is None else abs(x_cross - handmade_x)
+    
+    diff = abs(x_meas - handmade_x)
 
     with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"{filename} | " f"alg={x_cross} | " f"handmade={handmade_x}  | "f"diff={diff} | "f"fallback={fallback}\n")
+        f.write(f"{filename} | " f"alg={x_meas} | " f"handmade={handmade_x}  | "f"diff={diff} | "f"fallback={fallback}\n")
     print("CASE LOGGED")
 
 def plot_results(x_cross, x_meas, y_meas, handmade_x, handmade_y, a1, b1, a2, b2, break_idx):
@@ -139,7 +141,7 @@ def plot_results(x_cross, x_meas, y_meas, handmade_x, handmade_y, a1, b1, a2, b2
     if x_meas is not None:
         plt.scatter(x_meas, y_meas, color="green", s=120, label="Algorithm")
     
-    #plt.axvline(x.iloc[(len(x)//2)], color="yellow", linestyle="--")
+    #plt.axvline(x.iloc[int(0.9*len(x))], color="yellow", linestyle="--")
     diff = y.max() - y.min()
     plt.ylim(y.min() - 0.1 * diff, y.max() + 0.1 * diff)
     plt.legend()
